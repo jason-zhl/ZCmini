@@ -3,9 +3,15 @@ import express from 'express';
 import cors from 'cors';
 import * as db from './db.js';
 
+const BLOCK_DIFFICULTY = 1;
+
 const app = express();
 app.use(cors());
 app.use(express.json({ limit: '1mb' }));
+
+app.get('/difficulty', (req, res) => {
+  res.json({ difficulty: BLOCK_DIFFICULTY });
+});
 
 // Receive a new block
 app.post('/block', async (req, res) => {
