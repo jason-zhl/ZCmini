@@ -1,0 +1,33 @@
+{
+  "name": "zcmini",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "workspaces": [
+    "client",
+    "server"
+  ],
+  "private": true,
+  "scripts": {
+    "start": "npm run start --workspace=server",
+    "dev": "npm run dev --workspace=server",
+    "client": "npm run start --workspace=client",
+    "start:all": "npm run start --workspace=server & npm run start --workspace=client",
+    "dev:all": "npm run dev --workspace=server & npm run start --workspace=client"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/jasonl-18/ZCmini.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "module",
+  "bugs": {
+    "url": "https://github.com/jasonl-18/ZCmini/issues"
+  },
+  "homepage": "https://github.com/jasonl-18/ZCmini#readme",
+  "dependencies": {
+    "circomlib": "^2.0.5"
+  }
+}
