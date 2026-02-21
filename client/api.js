@@ -30,4 +30,33 @@ export class ServerAPI {
     const data = await this.request('/difficulty');
     return data.difficulty;
   }
+
+  /** Send a mined block and its transactions to the server. */
+  async sendMinedBlock(block, transactions = []) {
+    return this.request('/block', {
+      method: 'POST',
+      body: JSON.stringify({ block, transactions }),
+    });
+  }
+
+  /** Get the full list of blocks. */
+  async getBlocks() {
+    const data = await this.request('/blocks');
+    return data.blocks;
+  }
+
+  /** Get the latest n blocks (default 10). */
+  async getLatestBlocks(n = 10) {
+    const data = await this.request(`/blocks/latest?n=${encodeURIComponent(n)}`);
+    return data.blocks;
+  }
+
+  /** Get the list of transactions. Optionally pass a block height to get only that block's transactions. */
+  async getTransactions(blockHeight = undefined) {
+    const path = blockHeight !== undefined
+      ? `/transactions?blockHeight=${encodeURIComponent(blockHeight)}`
+      : '/transactions';
+    const data = await this.request(path);
+    return data.transactions;
+  }
 }
