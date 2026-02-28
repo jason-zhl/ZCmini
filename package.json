@@ -31,11 +31,11 @@
   "dependencies": {
     "base58": "^2.0.1",
     "bs58": "^6.0.0",
-    "circomlib": "^2.0.5",
-    "merkletreejs": "^0.4.2"
+    "circomlib": "^2.0.5"
   },
   "devDependencies": {
-    "chai": "^5.1.0",
-    "mocha": "^10.8.0"
+  },
+  "overrides": {
+    "bfj": "^9.1.3"
   }
 }
