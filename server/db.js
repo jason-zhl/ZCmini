@@ -5,8 +5,10 @@ import { fileURLToPath } from 'url';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const blocksDb = new Level(path.join(__dirname, 'data', 'blocks'), { valueEncoding: 'json' });
 const transactionsDb = new Level(path.join(__dirname, 'data', 'transactions'), { valueEncoding: 'json' });
+const mempoolDb = new Level(path.join(__dirname, 'data', 'mempool'), { valueEncoding: 'json' });
 
 const LENGTH_KEY = 'length';
+const MEMPOOL_PREFIX = 'tx_';
 
 export async function getLength() {
   try {
@@ -26,6 +28,9 @@ export async function appendBlock(block, transactions = []) {
   await blocksDb.put(LENGTH_KEY, String(height + 1));
   for (let i = 0; i < transactions.length; i++) {
     await transactionsDb.put(`${height}_${i}`, { ...transactions[i], blockHeight: height, index: i });
+  }
+  for (const tx of transactions) {
+    if (tx && tx.hash) await removeUnminedTransaction(tx.hash);
   }
   return height;
 }
@@ -77,4 +82,30 @@ export async function getAllTransactions() {
   }
   txs.sort((a, b) => a.blockHeight !== b.blockHeight ? a.blockHeight - b.blockHeight : a.index - b.index);
   return txs;
+}
+
+export async function addUnminedTransaction(tx) {
+  const hash = tx?.hash;
+  if (hash == null || typeof hash !== 'string') {
+    throw new Error('Transaction must have a hash field');
+  }
+  const key = `${MEMPOOL_PREFIX}${hash}`;
+  await mempoolDb.put(key, { ...tx, hash });
+  return hash;
+}
+
+export async function getUnminedTransactions() {
+  const txs = [];
+  for await (const [, value] of mempoolDb.iterator()) {
+    txs.push(value);
+  }
+  return txs;
+}
+
+export async function removeUnminedTransaction(hash) {
+  try {
+    await mempoolDb.del(`${MEMPOOL_PREFIX}${hash}`);
+  } catch (err) {
+    if (err.code !== 'LEVEL_NOT_FOUND') throw err;
+  }
 }

@@ -47,7 +47,6 @@ export class Client {
 
     const minedBlock = await this.mine(block);
     console.log("block (mined):", minedBlock);
-    console.log("block hash (mined):", utils.getBlockHash(minedBlock));
   }
 
   createCoin(value) {
@@ -135,6 +134,7 @@ export class Client {
     const nonce = utils.findNonce(block, blockDifficulty);
     block.nonce = utils.bigIntToHex(nonce);
     block.hash = utils.getBlockHash(block);
+    await this.api.sendMinedBlock(block, []);
     return block;
   }
 }

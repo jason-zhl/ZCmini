@@ -51,12 +51,26 @@ export class ServerAPI {
     return data.blocks;
   }
 
-  /** Get the list of transactions. Optionally pass a block height to get only that block's transactions. */
+  /** Get the list of mined transactions. Optionally pass a block height to get only that block's transactions. */
   async getTransactions(blockHeight = undefined) {
     const path = blockHeight !== undefined
       ? `/transactions?blockHeight=${encodeURIComponent(blockHeight)}`
       : '/transactions';
     const data = await this.request(path);
     return data.transactions;
+  }
+
+  /** Get unmined transactions (mempool). */
+  async getUnminedTransactions() {
+    const data = await this.request('/transactions/unmined');
+    return data.transactions;
+  }
+
+  /** Submit a transaction to the mempool (unmined). Transaction must have a .hash field. */
+  async submitTransaction(transaction) {
+    return this.request('/transaction', {
+      method: 'POST',
+      body: JSON.stringify({ transaction }),
+    });
   }
 }

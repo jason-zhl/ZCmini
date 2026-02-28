@@ -69,7 +69,36 @@ app.get('/blocks/latest', async (req, res) => {
   }
 });
 
-// Get all transactions, optionally filtered by block height
+// Get unmined transactions (mempool) – route before /transactions
+app.get('/transactions/unmined', async (req, res) => {
+  try {
+    const transactions = await db.getUnminedTransactions();
+    res.json({ transactions });
+  } catch (err) {
+    console.error('GET /transactions/unmined', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Submit a transaction to the mempool (unmined)
+app.post('/transaction', async (req, res) => {
+  try {
+    const transaction = req.body?.transaction ?? req.body;
+    if (!transaction || typeof transaction !== 'object') {
+      return res.status(400).json({ error: 'Body must include a transaction object' });
+    }
+    if (!transaction.hash) {
+      return res.status(400).json({ error: 'Transaction must have a hash field' });
+    }
+    const hash = await db.addUnminedTransaction(transaction);
+    res.status(201).json({ ok: true, hash });
+  } catch (err) {
+    console.error('POST /transaction', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Get all mined transactions, optionally filtered by block height
 app.get('/transactions', async (req, res) => {
   try {
     const blockHeight = req.query.blockHeight;
