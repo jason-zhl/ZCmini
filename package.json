@@ -13,7 +13,8 @@
     "dev": "npm run dev --workspace=server",
     "client": "npm run start --workspace=client",
     "start:all": "npm run start --workspace=server & npm run start --workspace=client",
-    "dev:all": "npm run dev --workspace=server & npm run start --workspace=client"
+    "dev:all": "npm run dev --workspace=server & npm run start --workspace=client",
+    "test": "mocha tests/**/*.test.js"
   },
   "repository": {
     "type": "git",
@@ -32,5 +33,9 @@
     "bs58": "^6.0.0",
     "circomlib": "^2.0.5",
     "merkletreejs": "^0.4.2"
+  },
+  "devDependencies": {
+    "chai": "^5.1.0",
+    "mocha": "^10.8.0"
   }
 }
