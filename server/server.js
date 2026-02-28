@@ -1,44 +1,38 @@
-// server.js
+// server.js – Express REST layer wrapping a Server instance
+import path from 'path';
+import { fileURLToPath } from 'url';
 import express from 'express';
 import cors from 'cors';
-import * as db from './db.js';
-import { validateBlock } from './validate.js';
+import { Server } from './AppServer.js';
 
-const BLOCK_DIFFICULTY = 3;
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const server = new Server({ dataDir: path.join(__dirname, 'data'), blockDifficulty: 3 });
 
 const app = express();
 app.use(cors());
 app.use(express.json({ limit: '1mb' }));
 
 app.get('/difficulty', (req, res) => {
-  res.json({ difficulty: BLOCK_DIFFICULTY });
+  res.json({ difficulty: server.getDifficulty() });
 });
 
-// Receive a new mined block and its transactions
 app.post('/block', async (req, res) => {
   try {
     const { block, transactions } = req.body ?? {};
-    if (!block || typeof block !== 'object') {
-      return res.status(400).json({ error: 'Body must include a block object' });
-    }
-    const txs = Array.isArray(transactions) ? transactions : [];
-    const length = await db.getLength();
-    validateBlock(block, txs, { length });
-    const height = await db.appendBlock(block, txs);
+    const height = await server.submitBlock(block, transactions);
     res.status(201).json({ ok: true, height });
   } catch (err) {
     console.error('POST /block', err);
-    const status = err.message?.startsWith('Block ') || err.message?.startsWith('Transactions ')
+    const status = err.message?.startsWith('Block ') || err.message?.startsWith('Transactions ') || err.message?.startsWith('Body ')
       ? 400
       : 500;
     res.status(status).json({ error: err.message });
   }
 });
 
-// Get full chain
 app.get('/chain', async (req, res) => {
   try {
-    const chain = await db.getChain();
+    const chain = await server.getChain();
     res.json(chain);
   } catch (err) {
     console.error('GET /chain', err);
@@ -46,10 +40,9 @@ app.get('/chain', async (req, res) => {
   }
 });
 
-// Get all blocks
 app.get('/blocks', async (req, res) => {
   try {
-    const blocks = await db.getBlocks();
+    const blocks = await server.getBlocks();
     res.json({ blocks });
   } catch (err) {
     console.error('GET /blocks', err);
@@ -57,11 +50,10 @@ app.get('/blocks', async (req, res) => {
   }
 });
 
-// Get latest n blocks (default 10)
 app.get('/blocks/latest', async (req, res) => {
   try {
     const n = Math.max(0, parseInt(req.query.n, 10) || 10);
-    const blocks = await db.getLatestBlocks(n);
+    const blocks = await server.getLatestBlocks(n);
     res.json({ blocks });
   } catch (err) {
     console.error('GET /blocks/latest', err);
@@ -69,10 +61,9 @@ app.get('/blocks/latest', async (req, res) => {
   }
 });
 
-// Get unmined transactions (mempool) – route before /transactions
 app.get('/transactions/unmined', async (req, res) => {
   try {
-    const transactions = await db.getUnminedTransactions();
+    const transactions = await server.getUnminedTransactions();
     res.json({ transactions });
   } catch (err) {
     console.error('GET /transactions/unmined', err);
@@ -80,31 +71,26 @@ app.get('/transactions/unmined', async (req, res) => {
   }
 });
 
-// Submit a transaction to the mempool (unmined)
 app.post('/transaction', async (req, res) => {
   try {
     const transaction = req.body?.transaction ?? req.body;
-    if (!transaction || typeof transaction !== 'object') {
-      return res.status(400).json({ error: 'Body must include a transaction object' });
-    }
-    if (!transaction.hash) {
-      return res.status(400).json({ error: 'Transaction must have a hash field' });
-    }
-    const hash = await db.addUnminedTransaction(transaction);
+    const hash = await server.addUnminedTransaction(transaction);
     res.status(201).json({ ok: true, hash });
   } catch (err) {
     console.error('POST /transaction', err);
-    res.status(500).json({ error: err.message });
+    const status = err.message?.startsWith('Body ') || err.message?.startsWith('Transaction ')
+      ? 400
+      : 500;
+    res.status(status).json({ error: err.message });
   }
 });
 
-// Get all mined transactions, optionally filtered by block height
 app.get('/transactions', async (req, res) => {
   try {
-    const blockHeight = req.query.blockHeight;
-    const transactions = blockHeight !== undefined
-      ? await db.getTransactionsForBlock(Number(blockHeight))
-      : await db.getAllTransactions();
+    const blockHeight = req.query.blockHeight !== undefined
+      ? Number(req.query.blockHeight)
+      : undefined;
+    const transactions = await server.getTransactions(blockHeight);
     res.json({ transactions });
   } catch (err) {
     console.error('GET /transactions', err);
@@ -112,22 +98,17 @@ app.get('/transactions', async (req, res) => {
   }
 });
 
-// Get block by height
 app.get('/block/:height', async (req, res) => {
   try {
     const height = Number(req.params.height);
-    if (!Number.isInteger(height) || height < 0) {
-      return res.status(400).json({ error: 'Invalid height' });
-    }
-    const length = await db.getLength();
-    if (height >= length) {
-      return res.status(404).json({ error: 'Block not found' });
-    }
-    const block = await db.getBlock(height);
+    const block = await server.getBlock(height);
     res.json(block);
   } catch (err) {
     if (err.code === 'LEVEL_NOT_FOUND') {
       return res.status(404).json({ error: 'Block not found' });
+    }
+    if (err.message === 'Invalid height') {
+      return res.status(400).json({ error: err.message });
     }
     console.error('GET /block/:height', err);
     res.status(500).json({ error: err.message });
