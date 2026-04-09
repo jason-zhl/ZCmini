@@ -1,3 +1,5 @@
+import { reviveUtxoBigintsInTransaction } from '../common/utils.js';
+
 const DEFAULT_BASE_URL = 'http://localhost:3000';
 
 /**
@@ -35,14 +37,15 @@ export class ServerAPI {
   async sendMinedBlock(block, transactions = []) {
     return this.request('/block', {
       method: 'POST',
-      body: JSON.stringify({ block, transactions }),
+      body: JSON.stringify({ block, transactions }, 
+        (_, value) => (typeof value === 'bigint' ? value.toString() : value),
+      ),
     });
   }
 
-  /** Get the full list of blocks. */
-  async getBlocks() {
-    const data = await this.request('/blocks');
-    return data.blocks;
+  /** Full chain `{ length, blocks }`. */
+  async getChain() {
+    return this.request('/chain');
   }
 
   /** Get the latest n blocks (default 10). */
@@ -63,14 +66,18 @@ export class ServerAPI {
   /** Get unmined transactions (mempool). */
   async getUnminedTransactions() {
     const data = await this.request('/transactions/unmined');
-    return data.transactions;
+    const txList = data?.transactions ?? [];
+    return txList.map(reviveUtxoBigintsInTransaction);
   }
 
-  /** Submit a transaction to the mempool (unmined). Transaction must have a .hash field. */
+  /** Submit a transaction to the mempool (unmined) */
   async submitTransaction(transaction) {
     return this.request('/transaction', {
       method: 'POST',
-      body: JSON.stringify({ transaction }),
+      body: JSON.stringify(
+        { transaction },
+        (_, value) => (typeof value === 'bigint' ? value.toString() : value),
+      ),
     });
   }
 }

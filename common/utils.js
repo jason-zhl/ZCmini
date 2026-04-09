@@ -22,11 +22,11 @@ export function bytesToBigInt(bytes) {
 }
 
 export function bigIntToHex(bigInt) {
-  return bigInt.toString(16).padStart(64, '0');
+  return '0x' + bigInt.toString(16).padStart(64, '0');
 }
 
 export function hexToBigInt(hex) {
-  return (hex !== null) ? BigInt(`0x${hex}`) : 0n;
+  return (hex !== null) ? BigInt(hex) : 0n;
 }
 
 export function b58ToBigInt(b58) {
@@ -38,6 +38,7 @@ export function bigIntToB58(bigInt) {
 }
 
 export function getTransactionHash(tx) {
+    if (tx.hash) return tx.hash;
     let input_root = 0n;
     for (let utxoIn of tx.utxoIns) {
       input_root = poseidon2([input_root, utxoIn.cm]);
@@ -109,11 +110,44 @@ export function findNonce(block, difficulty) {
  */
 export function verifyBlockHash(hash, difficulty) {
   const hash_string = hash.toString(16).padStart(64, '0');
-  for (let i = 0; i < difficulty; i++){
+  for (let i = 2; i < difficulty + 2; i++){
     if (hash_string[i] !== '0'){
       return false;
     }
   }
   return true;
+}
+
+/** Decimal strings produced by JSON.stringify(bigint) → BigInt (matches submitTransaction replacer). */
+export function reviveBigintStringsInObject(value) {
+  if (value == null) return value;
+  if (Array.isArray(value)) return value.map(reviveBigintStringsInObject);
+  if (typeof value === 'object') {
+    const out = {};
+    for (const [k, v] of Object.entries(value)) {
+      if (typeof v === 'string' && /^\d+$/.test(v)) {
+        out[k] = BigInt(v);
+      } else if (v != null && typeof v === 'object') {
+        out[k] = reviveBigintStringsInObject(v);
+      } else {
+        out[k] = v;
+      }
+    }
+    return out;
+  }
+  return value;
+}
+
+export function reviveUtxoBigintsInTransaction(tx) {
+  if (!tx || typeof tx !== 'object') return tx;
+  return {
+    ...tx,
+    utxoIns: Array.isArray(tx.utxoIns)
+      ? tx.utxoIns.map((e) => reviveBigintStringsInObject(e))
+      : tx.utxoIns,
+    utxoOuts: Array.isArray(tx.utxoOuts)
+      ? tx.utxoOuts.map((e) => reviveBigintStringsInObject(e))
+      : tx.utxoOuts,
+  };
 }
   

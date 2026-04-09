@@ -20,7 +20,7 @@ app.post('/block', async (req, res) => {
   try {
     const { block, transactions } = req.body ?? {};
     const height = await server.submitBlock(block, transactions);
-    res.status(201).json({ ok: true, height });
+    res.status(201).json({ ok: true, height: Number(height) });
   } catch (err) {
     console.error('POST /block', err);
     const status = err.message?.startsWith('Block ') || err.message?.startsWith('Transactions ') || err.message?.startsWith('Body ')
@@ -36,16 +36,6 @@ app.get('/chain', async (req, res) => {
     res.json(chain);
   } catch (err) {
     console.error('GET /chain', err);
-    res.status(500).json({ error: err.message });
-  }
-});
-
-app.get('/blocks', async (req, res) => {
-  try {
-    const blocks = await server.getBlocks();
-    res.json({ blocks });
-  } catch (err) {
-    console.error('GET /blocks', err);
     res.status(500).json({ error: err.message });
   }
 });
@@ -113,10 +103,6 @@ app.get('/block/:height', async (req, res) => {
     console.error('GET /block/:height', err);
     res.status(500).json({ error: err.message });
   }
-});
-
-app.get('/', (req, res) => {
-  res.send('Hello!');
 });
 
 app.listen(3000, () => {

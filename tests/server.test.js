@@ -42,10 +42,8 @@ describe('Server', () => {
     });
   });
 
-  describe('getBlocks / getChain', () => {
-    it('returns empty list when no blocks', async () => {
-      const blocks = await server.getBlocks();
-      expect(blocks).to.deep.equal([]);
+  describe('getChain', () => {
+    it('returns empty chain when no blocks', async () => {
       const chain = await server.getChain();
       expect(chain).to.deep.equal({ length: 0, blocks: [] });
     });
@@ -53,7 +51,8 @@ describe('Server', () => {
     it('returns blocks after submitBlock', async () => {
       await server.submitBlock({ hash: 'a', previous: null, root: 'r', nonce: '0' }, []);
       await server.submitBlock({ hash: 'b', previous: 'a', root: 'r', nonce: '0' }, []);
-      const blocks = await server.getBlocks();
+      const { length, blocks } = await server.getChain();
+      expect(length).to.equal(2);
       expect(blocks).to.have.lengthOf(2);
       expect(blocks[0].hash).to.equal('a');
       expect(blocks[1].hash).to.equal('b');

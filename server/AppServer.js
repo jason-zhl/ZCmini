@@ -17,7 +17,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const DEFAULT_DATA_DIR = path.join(__dirname, 'data');
 
 export class Server {
-  constructor({ db, dataDir, blockDifficulty = 3 } = {}) {
+  constructor({ db, dataDir, blockDifficulty = 1 } = {}) {
     if (db) {
       this.db = db;
     } else {
@@ -30,6 +30,8 @@ export class Server {
     return this.blockDifficulty;
   }
 
+  /** Blockchain functions */
+  /** ------------------------------------------------------------ */
   async submitBlock(block, transactions = []) {
     if (!block || typeof block !== 'object') {
       throw new Error('Body must include a block object');
@@ -42,10 +44,6 @@ export class Server {
 
   async getChain() {
     return await this.db.getChain();
-  }
-
-  async getBlocks() {
-    return await this.db.getBlocks();
   }
 
   async getLatestBlocks(n = 10) {
@@ -66,6 +64,8 @@ export class Server {
     return await this.db.getBlock(h);
   }
 
+  /** Transaction/Mempool functions */
+  /** ------------------------------------------------------------ */
   async addUnminedTransaction(transaction) {
     if (!transaction || typeof transaction !== 'object') {
       throw new Error('Body must include a transaction object');
