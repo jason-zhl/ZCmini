@@ -36,24 +36,21 @@ export class Client {
     //   throw err;
     // }
 
-    // const {coin : coin1 } = this.createCoin(100);
-    // const {tx : tx1} = this.createMintTransaction(coin1);
-    // const {coin : coin2 } = this.createCoin(200);
-    // const {tx : tx2} = this.createMintTransaction(coin2);
+    const {coin : coin1 } = this.createCoin(100);
+    const {tx : tx1} = this.createMintTransaction(coin1);
+    const {coin : coin2 } = this.createCoin(200);
+    const {tx : tx2} = this.createMintTransaction(coin2);
 
-    // await this.api.submitTransaction(tx1);
-    // await this.api.submitTransaction(tx2);
+    await this.api.submitTransaction(tx1);
+    await this.api.submitTransaction(tx2);
 
-    // const unmined_transactions = await this.api.getUnminedTransactions();
-    // console.dir(unmined_transactions, { depth: null });
+    await this.minAndSendAllUnminedTransactions();
 
-    // const block = this.createBlock(unmined_transactions);
-    // const mined_block = await this.mineBlock(block);
-    // console.dir(mined_block, { depth: null });
-    
-    // const result = await this.api.sendMinedBlock(mined_block, unmined_transactions);
-    // console.log('sendMinedBlock result:', result, 'height:', result?.height);
+    const {coin : coin3 } = this.createCoin(300);
+    const {tx : tx3} = this.createMintTransaction(coin3);
+    await this.api.submitTransaction(tx3);
 
+    await this.minAndSendAllUnminedTransactions();
     const chain = await this.api.getChain();
     console.log('returned chain:');
     console.dir(chain, { depth: null });
@@ -128,10 +125,12 @@ export class Client {
     return { tx, c1, c2 };
   }
 
-  createBlock(transactions) {
+  async createBlock(transactions) {
+    const lastBlock = await this.api.getLatestBlocks(1);
+    const previousHash = lastBlock.length === 0 ? null : lastBlock[0].hash;
     const block = {
       hash: null,
-      previous: null,
+      previous: previousHash,
       root: utils.getMerkleRoot(transactions.map(tx => utils.getTransactionHash(tx))),
       nonce: null,
     };
@@ -146,5 +145,13 @@ export class Client {
     block.nonce = utils.bigIntToHex(nonce);
     block.hash = utils.getBlockHash(block);
     return block;
+  }
+
+  async minAndSendAllUnminedTransactions() {
+    const unmined = await this.api.getUnminedTransactions();
+    const block = await this.createBlock(unmined);
+    const mined_block = await this.mineBlock(block);
+    const result = await this.api.sendMinedBlock(mined_block, unmined);
+    console.log('sendMinedBlock result:', result, 'height:', result?.height);
   }
 }
