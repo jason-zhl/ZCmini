@@ -36,18 +36,27 @@ export class Client {
     //   throw err;
     // }
 
-    const { coin } = this.createCoin(100);
-    const { sn, tx } = this.createMintTransaction(coin);
-    console.log(tx);
-    console.log(coin);
+    // const {coin : coin1 } = this.createCoin(100);
+    // const {tx : tx1} = this.createMintTransaction(coin1);
+    // const {coin : coin2 } = this.createCoin(200);
+    // const {tx : tx2} = this.createMintTransaction(coin2);
 
-    const block = this.createBlock([tx]);
-    console.log("block (unmined):", block);
-    console.log("block hash (unmined):", utils.getBlockHash(block));
+    // await this.api.submitTransaction(tx1);
+    // await this.api.submitTransaction(tx2);
 
-    const minedBlock = await this.mine(block);
-    console.log("block (mined):", minedBlock);
-    console.log("block hash (mined):", utils.getBlockHash(minedBlock));
+    // const unmined_transactions = await this.api.getUnminedTransactions();
+    // console.dir(unmined_transactions, { depth: null });
+
+    // const block = this.createBlock(unmined_transactions);
+    // const mined_block = await this.mineBlock(block);
+    // console.dir(mined_block, { depth: null });
+    
+    // const result = await this.api.sendMinedBlock(mined_block, unmined_transactions);
+    // console.log('sendMinedBlock result:', result, 'height:', result?.height);
+
+    const chain = await this.api.getChain();
+    console.log('returned chain:');
+    console.dir(chain, { depth: null });
   }
 
   createCoin(value) {
@@ -68,7 +77,8 @@ export class Client {
 
   createMintTransaction(coin) {
     const sn = coin.sn;
-    const encrypted_secrets = { key_salt : coin.key_salt, key_cm_salt : coin.key_cm_salt };
+    // TODO: replace owner identification with encryption (BabyJubJub)
+    const encrypted_secrets = { owner : this.privateKey, key_salt : coin.key_salt, key_cm_salt : coin.key_cm_salt };
     const mint_tx = { value: coin.value, key_cm : coin.key_cm, cm_salt : coin.cm_salt, cm : coin.cm, encrypted_secrets };
     const tx = { 
       metadata: { 
@@ -129,9 +139,9 @@ export class Client {
     block.hash = utils.getBlockHash(block);
     return block;
   }
-  async mine(block) {
-    // const blockDifficulty = await this.api.getBlockDifficulty(); TODO: Implement difficulty
-    const blockDifficulty = 3;
+
+  async mineBlock(block) {
+    const blockDifficulty = Number(await this.api.getBlockDifficulty());
     const nonce = utils.findNonce(block, blockDifficulty);
     block.nonce = utils.bigIntToHex(nonce);
     block.hash = utils.getBlockHash(block);
