@@ -30,7 +30,6 @@
   "homepage": "https://github.com/jasonl-18/ZCmini#readme",
   "dependencies": {
     "base58": "^2.0.1",
-    "bs58": "^6.0.0",
     "circomlib": "^2.0.5"
   },
   "devDependencies": {

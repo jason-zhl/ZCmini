@@ -1,4 +1,8 @@
-import { reviveUtxoBigintsInTransaction } from '../common/utils.js';
+import { bigIntToHex } from '../common/utils.js';
+
+function encodeBigint(_key, value) {
+  return typeof value === 'bigint' ? bigIntToHex(value) : value;
+}
 
 const DEFAULT_BASE_URL = 'http://localhost:3000';
 
@@ -37,9 +41,7 @@ export class ServerAPI {
   async sendMinedBlock(block, transactions = []) {
     return this.request('/block', {
       method: 'POST',
-      body: JSON.stringify({ block, transactions }, 
-        (_, value) => (typeof value === 'bigint' ? value.toString() : value),
-      ),
+      body: JSON.stringify({ block, transactions }, encodeBigint),
     });
   }
 
@@ -66,18 +68,14 @@ export class ServerAPI {
   /** Get unmined transactions (mempool). */
   async getUnminedTransactions() {
     const data = await this.request('/transactions/unmined');
-    const txList = data?.transactions ?? [];
-    return txList.map(reviveUtxoBigintsInTransaction);
+    return data?.transactions ?? [];
   }
 
   /** Submit a transaction to the mempool (unmined) */
   async submitTransaction(transaction) {
     return this.request('/transaction', {
       method: 'POST',
-      body: JSON.stringify(
-        { transaction },
-        (_, value) => (typeof value === 'bigint' ? value.toString() : value),
-      ),
+      body: JSON.stringify({ transaction }, encodeBigint),
     });
   }
 }

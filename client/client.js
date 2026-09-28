@@ -57,25 +57,39 @@ export class Client {
   }
 
   createCoin(value) {
+    const valueField = BigInt(value);
     // sn := Poseidon(a_{sk}, rho)
-    const key_salt = utils.randomBigInt();
-    const sn = poseidon2([this.privateKey, key_salt]);
+    const keySalt = utils.randomBigInt();
+    const sn = poseidon2([this.privateKey, keySalt]);
 
     // k = com_r (a_{pk} || rho)
-    const key_cm_salt = utils.randomBigInt();
-    const key_cm = poseidon3([this.transmissionKey, key_cm_salt, key_cm_salt]);
-    
+    const keyCmSalt = utils.randomBigInt();
+    const keyCm = poseidon3([this.transmissionKey, keyCmSalt, keyCmSalt]);
+
     // cm = com_r (v || a_{pk} || s)
-    const cm_salt = utils.randomBigInt();
-    const cm = poseidon3([value, this.transmissionKey, cm_salt]);
-    const coin = { apk : this.transmissionKey, value, key_salt, key_cm_salt, cm_salt, sn, key_cm, cm };
+    const cmSalt = utils.randomBigInt();
+    const cm = poseidon3([valueField, this.transmissionKey, cmSalt]);
+    const coin = Object.fromEntries(Object.entries({
+      apk: this.transmissionKey,
+      key_salt: keySalt,
+      key_cm_salt: keyCmSalt,
+      cm_salt: cmSalt,
+      sn,
+      key_cm: keyCm,
+      cm,
+    }).map(([field, fieldValue]) => [field, utils.bigIntToHex(fieldValue)]));
+    coin.value = value;
     return { coin };
   }
 
   createMintTransaction(coin) {
     const sn = coin.sn;
     // TODO: replace owner identification with encryption (BabyJubJub)
-    const encrypted_secrets = { owner : this.privateKey, key_salt : coin.key_salt, key_cm_salt : coin.key_cm_salt };
+    const encrypted_secrets = {
+      owner: utils.bigIntToHex(this.privateKey),
+      key_salt: coin.key_salt,
+      key_cm_salt: coin.key_cm_salt,
+    };
     const mint_tx = { value: coin.value, key_cm : coin.key_cm, cm_salt : coin.cm_salt, cm : coin.cm, encrypted_secrets };
     const tx = { 
       metadata: { 
@@ -97,7 +111,10 @@ export class Client {
     const { coin: send_coin } = this.createCoin(send_value);
     const { coin: change_coin } = this.createCoin(change_value);
 
-    const oldSn = poseidon2([send_coin.key_salt, this.privateKey]);
+    const oldSn = utils.bigIntToHex(poseidon2([
+      utils.hexToBigInt(send_coin.key_salt),
+      this.privateKey,
+    ]));
     let proof, publicSignals;
     try {
       const result = await zk.buildProof({
@@ -141,8 +158,7 @@ export class Client {
 
   async mineBlock(block) {
     const blockDifficulty = Number(await this.api.getBlockDifficulty());
-    const nonce = utils.findNonce(block, blockDifficulty);
-    block.nonce = utils.bigIntToHex(nonce);
+    block.nonce = utils.findNonce(block, blockDifficulty);
     block.hash = utils.getBlockHash(block);
     return block;
   }
