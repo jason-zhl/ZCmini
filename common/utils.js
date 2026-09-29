@@ -38,6 +38,17 @@ export function getTransactionHash(tx) {
     return bigIntToHex(poseidon3([input_root, output_root, snarks_root]));
   }
 
+export function pourSerials(tx) {
+  if (tx?.metadata?.tx_type !== 'pour' || !Array.isArray(tx.utxoIns)) return [];
+  const serials = [];
+  for (let inputIndex = 0; inputIndex < tx.utxoIns.length; inputIndex++) {
+    const sn = tx.utxoIns[inputIndex]?.sn;
+    if (sn == null || sn === '') continue;
+    serials.push({ sn, inputIndex });
+  }
+  return serials;
+}
+
 export function getMerkleRoot(hashes) {
   if (hashes.length === 0) return bigIntToHex(0n);
   if (hashes.length === 1) return hashes[0];

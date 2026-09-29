@@ -11,7 +11,7 @@
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { createDb } from './db.js';
-import { transactionShapeCheck, validateBlock } from './validate.js';
+import { transactionShapeCheck, validateBlock, validateTransaction } from './validate.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const DEFAULT_DATA_DIR = path.join(__dirname, 'data');
@@ -42,12 +42,14 @@ export class Server {
     }
     const length = await this.db.getLength();
     const unminedTransactions = await this.db.getUnminedTransactions();
+    const spentSerials = await this.db.getNullifiers();
     const tipHash = length === 0 ? null : (await this.db.getBlock(length - 1)).hash;
     validateBlock(block, transactions, {
       length,
       tipHash,
       unminedTransactions,
       blockDifficulty: this.blockDifficulty,
+      spentSerials,
     });
     return await this.db.appendBlock(block, transactions);
   }
@@ -84,6 +86,10 @@ export class Server {
     if (!transaction.hash) {
       throw new Error('Transaction must have a hash field');
     }
+    validateTransaction(transaction, {
+      spentSerials: await this.db.getNullifiers(),
+      unminedNullifiers: await this.db.getUnminedNullifiers(),
+    });
     return await this.db.addUnminedTransaction(transaction);
   }
 
@@ -100,5 +106,15 @@ export class Server {
       return await this.db.getTransactionsForBlock(h);
     }
     return await this.db.getAllTransactions();
+  }
+
+  /** Spent and mempool serial numbers */
+  /** ------------------------------------------------------------ */
+  async getNullifiers() {
+    return await this.db.getNullifiers();
+  }
+
+  async getUnminedNullifiers() {
+    return await this.db.getUnminedNullifiers();
   }
 }

@@ -15,6 +15,15 @@ function mintTx(hash, cm = '0x1') {
   };
 }
 
+function pourTx(hash, sns = ['sn-1']) {
+  return {
+    hash,
+    metadata: { tx_type: 'pour' },
+    utxoIns: sns.map((sn) => ({ cm: `cm-${sn}`, sn })),
+    utxoOuts: [{ cm: 'out-1' }, { cm: 'out-2' }],
+  };
+}
+
 function mineBlock(transactions, previous, difficulty) {
   const block = {
     previous,
@@ -222,6 +231,16 @@ describe('Server', () => {
         }
       });
 
+      it('rejects a pour that reuses a serial number', async () => {
+        await server.addUnminedTransaction(pourTx('tx-a', ['sn-1']));
+        try {
+          await server.addUnminedTransaction(pourTx('tx-b', ['sn-1']));
+          expect.fail('should have thrown');
+        } catch (err) {
+          expect(err.message).to.include('already in the mempool');
+        }
+      });
+
       it('rejects transaction without hash', async () => {
         try {
           const tx = mintTx('tx1');
@@ -232,6 +251,47 @@ describe('Server', () => {
           expect(err.message).to.include('hash');
         }
       });
+    });
+  });
+
+  describe('nullifiers', () => {
+    it('stores pour serials in the mempool and leaves mints out', async () => {
+      await server.addUnminedTransaction(mintTx('mint-1'));
+      await server.addUnminedTransaction(pourTx('pour-1', ['sn-1', 'sn-2']));
+      const unmined = await server.getUnminedNullifiers();
+      expect(unmined.map((entry) => entry.sn)).to.have.members(['sn-1', 'sn-2']);
+      expect(await server.getNullifiers()).to.deep.equal([]);
+    });
+
+    it('moves pour serials from the mempool set to the mined set', async () => {
+      const hash = '0x' + 'ab'.repeat(32);
+      const tx = pourTx(hash, ['0x' + '11'.repeat(32)]);
+      await server.addUnminedTransaction(tx);
+      const block = mineBlock([tx], null, server.getDifficulty());
+      await server.submitBlock(block, [tx]);
+
+      expect(await server.getUnminedNullifiers()).to.deep.equal([]);
+      const mined = await server.getNullifiers();
+      expect(mined).to.deep.equal([{
+        sn: '0x' + '11'.repeat(32),
+        txHash: hash,
+        blockHeight: 0,
+        txIndex: 0,
+        inputIndex: 0,
+      }]);
+    });
+
+    it('rejects a pour that spends an already mined serial', async () => {
+      const hash = '0x' + 'cd'.repeat(32);
+      const tx = pourTx(hash, ['sn-spent']);
+      await server.addUnminedTransaction(tx);
+      await server.submitBlock(mineBlock([tx], null, server.getDifficulty()), [tx]);
+      try {
+        await server.addUnminedTransaction(pourTx('tx-again', ['sn-spent']));
+        expect.fail('should have thrown');
+      } catch (err) {
+        expect(err.message).to.include('already spent');
+      }
     });
   });
 });

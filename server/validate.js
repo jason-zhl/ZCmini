@@ -1,17 +1,18 @@
 /**
  * Transaction shape is checked when a tx enters the mempool
  * (`transactionShapeCheck`, called from `addUnminedTransaction`).
- * `validateBlock` checks block shape, pool membership, chain continuity,
- * merkle root, block hash, and proof of work.
+ * `validateTransaction` checks one mint or pour. `validateBlock` checks block
+ * shape, pool membership, chain continuity, merkle root, block hash, proof of
+ * work, and each included transaction.
  *
  * Throws an Error with a descriptive message if validation fails.
  *
  * @param {object} block - The block to validate
  * @param {object[]} transactions - The transactions included in the block
- * @param {object} context - length, tipHash, unminedTransactions, blockDifficulty
+ * @param {object} context - length, tipHash, unminedTransactions, blockDifficulty, spentSerials
  */
 
-import { getBlockHash, getMerkleRoot, verifyBlockHash } from "../common/utils.js";
+import { getBlockHash, getMerkleRoot, pourSerials, verifyBlockHash } from "../common/utils.js";
 
 export const BLOCK_FIELDS = ['hash', 'previous', 'root', 'nonce'];
 export const TX_FIELDS = ['utxoIns', 'utxoOuts'];
@@ -89,6 +90,43 @@ export function transactionShapeCheck(tx, label = 'Transaction') {
   }
 }
 
+export function validateTransaction(tx, context = {}) {
+  const serials = pourSerials(tx);
+  if (serials.length === 0) return;
+  const accepted = context.acceptedSerials ?? [];
+  assertSerialsAvailable([...accepted, ...serials], {
+    spentSerials: context.spentSerials ?? [],
+    unminedNullifiers: context.unminedNullifiers ?? [],
+    txHash: context.txHash ?? tx?.hash,
+  });
+}
+
+function assertSerialsAvailable(serials, { spentSerials = [], unminedNullifiers = [], txHash } = {}) {
+  const spent = new Set();
+  for (const entry of spentSerials) {
+    const sn = entry?.sn ?? entry;
+    if (sn != null && sn !== '') spent.add(sn);
+  }
+  const pending = new Map();
+  for (const entry of unminedNullifiers) {
+    if (entry?.sn != null && entry.sn !== '') pending.set(entry.sn, entry.txHash);
+  }
+
+  const seen = new Set();
+  for (const { sn } of serials) {
+    if (seen.has(sn)) {
+      throw new Error(`Serial number ${sn} is repeated`);
+    }
+    seen.add(sn);
+    if (spent.has(sn)) {
+      throw new Error(`Serial number ${sn} is already spent`);
+    }
+    if (txHash !== undefined && pending.has(sn) && pending.get(sn) !== txHash) {
+      throw new Error(`Serial number ${sn} is already in the mempool`);
+    }
+  }
+}
+
 export function validateBlock(block, transactions = [], context = {}) {
   // Block shape
   if (!block || typeof block !== 'object' || Array.isArray(block)) {
@@ -154,5 +192,14 @@ export function validateBlock(block, transactions = [], context = {}) {
   }
   if (!verifyBlockHash(block.hash, difficulty)) {
     throw new Error('Block hash does not meet proof of work');
+  }
+
+  const acceptedSerials = [];
+  for (const tx of transactions) {
+    validateTransaction(tx, {
+      spentSerials: context.spentSerials ?? [],
+      acceptedSerials,
+    });
+    acceptedSerials.push(...pourSerials(tx));
   }
 }

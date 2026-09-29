@@ -1,21 +1,71 @@
 import { Level } from 'level';
 import path from 'path';
+import { pourSerials } from '../common/utils.js';
 
 const BLOCK_PREFIX = 'block_';
 const BLOCK_RANGE_LT = 'block_~';
 const MEMPOOL_PREFIX = 'mp_';
 const MEMPOOL_RANGE_LT = 'mq';
+const NULLIFIER_PREFIX = 'sn_';
+const NULLIFIER_RANGE_LT = 'so';
 
 /**
  * Create a db interface backed by Level at the given base path.
  * Use different basePath for production vs testing (e.g. temp dir or in-memory).
  *
- * @param {string} basePath - Directory for blocks/ and transactions/
+ * Nullifiers use one database and two key spaces, same as transactions:
+ * mined serials are `sn_${sn}`, mempool serials are `mp_${sn}`.
+ *
+ * @param {string} basePath - Directory for blocks/, transactions/, and nullifiers/
  * @returns {object} Db interface (getLength, appendBlock, getBlock, ...)
  */
 export function createDb(basePath) {
   const blocksDb = new Level(path.join(basePath, 'blocks'), { valueEncoding: 'json' });
   const transactionsDb = new Level(path.join(basePath, 'transactions'), { valueEncoding: 'json' });
+  const nullifiersDb = new Level(path.join(basePath, 'nullifiers'), { valueEncoding: 'json' });
+
+  async function addUnminedNullifiers(tx) {
+    for (const { sn, inputIndex } of pourSerials(tx)) {
+      await nullifiersDb.put(`${MEMPOOL_PREFIX}${sn}`, { sn, txHash: tx.hash, inputIndex });
+    }
+  }
+
+  async function commitNullifiers(transactions, height) {
+    for (let txIndex = 0; txIndex < transactions.length; txIndex++) {
+      const tx = transactions[txIndex];
+      for (const { sn, inputIndex } of pourSerials(tx)) {
+        await nullifiersDb.put(`${NULLIFIER_PREFIX}${sn}`, {
+          sn,
+          txHash: tx?.hash,
+          blockHeight: height,
+          txIndex,
+          inputIndex,
+        });
+        try {
+          await nullifiersDb.del(`${MEMPOOL_PREFIX}${sn}`);
+        } catch (err) {
+          if (err.code !== 'LEVEL_NOT_FOUND') throw err;
+        }
+      }
+    }
+  }
+
+  async function getNullifiers() {
+    const serials = [];
+    for await (const [, value] of nullifiersDb.iterator({ gte: NULLIFIER_PREFIX, lt: NULLIFIER_RANGE_LT })) {
+      serials.push(value);
+    }
+    serials.sort((a, b) => a.blockHeight - b.blockHeight || a.txIndex - b.txIndex || a.inputIndex - b.inputIndex);
+    return serials;
+  }
+
+  async function getUnminedNullifiers() {
+    const serials = [];
+    for await (const [, value] of nullifiersDb.iterator({ gte: MEMPOOL_PREFIX, lt: MEMPOOL_RANGE_LT })) {
+      serials.push(value);
+    }
+    return serials;
+  }
 
   async function getLength() {
     let count = 0;
@@ -44,6 +94,7 @@ export function createDb(basePath) {
     for (const tx of transactions) {
       if (tx && tx.hash) await removeUnminedTransaction(tx.hash);
     }
+    await commitNullifiers(transactions, height);
     return height;
   }
 
@@ -98,6 +149,7 @@ export function createDb(basePath) {
       throw new Error('Transaction must have a hash field');
     }
     const key = `${MEMPOOL_PREFIX}${hash}`;
+    await addUnminedNullifiers(tx);
     await transactionsDb.put(key, { ...tx, hash });
     return hash;
   }
@@ -113,11 +165,13 @@ export function createDb(basePath) {
   async function clear() {
     await blocksDb.clear();
     await transactionsDb.clear();
+    await nullifiersDb.clear();
   }
 
   async function close() {
     await blocksDb.close();
     await transactionsDb.close();
+    await nullifiersDb.close();
   }
 
   return {
@@ -131,6 +185,8 @@ export function createDb(basePath) {
     addUnminedTransaction,
     getUnminedTransactions,
     removeUnminedTransaction,
+    getNullifiers,
+    getUnminedNullifiers,
     clear,
     close,
   };
