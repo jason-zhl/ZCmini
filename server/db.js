@@ -110,6 +110,16 @@ export function createDb(basePath) {
     return txs;
   }
 
+  async function clear() {
+    await blocksDb.clear();
+    await transactionsDb.clear();
+  }
+
+  async function close() {
+    await blocksDb.close();
+    await transactionsDb.close();
+  }
+
   return {
     getLength,
     appendBlock,
@@ -121,5 +131,7 @@ export function createDb(basePath) {
     addUnminedTransaction,
     getUnminedTransactions,
     removeUnminedTransaction,
+    clear,
+    close,
   };
 }

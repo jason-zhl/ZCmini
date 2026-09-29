@@ -11,7 +11,7 @@
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { createDb } from './db.js';
-import { validateBlock } from './validate.js';
+import { transactionShapeCheck, validateBlock } from './validate.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const DEFAULT_DATA_DIR = path.join(__dirname, 'data');
@@ -30,16 +30,26 @@ export class Server {
     return this.blockDifficulty;
   }
 
+  async close() {
+    await this.db.close?.();
+  }
+
   /** Blockchain functions */
   /** ------------------------------------------------------------ */
   async submitBlock(block, transactions = []) {
     if (!block || typeof block !== 'object') {
       throw new Error('Body must include a block object');
     }
-    const txs = Array.isArray(transactions) ? transactions : [];
     const length = await this.db.getLength();
-    validateBlock(block, txs, { length });
-    return await this.db.appendBlock(block, txs);
+    const unminedTransactions = await this.db.getUnminedTransactions();
+    const tipHash = length === 0 ? null : (await this.db.getBlock(length - 1)).hash;
+    validateBlock(block, transactions, {
+      length,
+      tipHash,
+      unminedTransactions,
+      blockDifficulty: this.blockDifficulty,
+    });
+    return await this.db.appendBlock(block, transactions);
   }
 
   async getChain() {
@@ -70,6 +80,7 @@ export class Server {
     if (!transaction || typeof transaction !== 'object') {
       throw new Error('Body must include a transaction object');
     }
+    transactionShapeCheck(transaction);
     if (!transaction.hash) {
       throw new Error('Transaction must have a hash field');
     }
