@@ -9,10 +9,10 @@
  *
  * @param {object} block - The block to validate
  * @param {object[]} transactions - The transactions included in the block
- * @param {object} context - length, tipHash, unminedTransactions, blockDifficulty, spentSerials
+ * @param {object} context - length, tipHash, unminedTransactions, blockDifficulty, spentSerials, commitmentLeaves
  */
 
-import { getBlockHash, getMerkleRoot, pourSerials, verifyBlockHash } from "../common/utils.js";
+import { bigIntToHex, getBlockHash, getMerkleRoot, hexToBigInt, pourSerials, verifyBlockHash } from "../common/utils.js";
 
 export const BLOCK_FIELDS = ['hash', 'previous', 'root', 'nonce'];
 export const TX_FIELDS = ['utxoIns', 'utxoOuts'];
@@ -22,6 +22,35 @@ export const UTXO_OUT_FIELDS = ['cm'];
 export const UTXO_OUT_MINT_FIELDS = ['value', 'key_cm', 'cm_salt'];
 
 const HEX256 = /^0x[0-9a-f]{64}$/;
+const HEX_FIELD = /^0x[0-9a-fA-F]+$/;
+
+/** Commitment as a field element. Accepts a 0x hex string or a non-negative bigint. */
+export function commitmentField(cm) {
+  if (typeof cm === 'bigint') {
+    if (cm < 0n) throw new Error('Commitment must be a 0x hex string');
+    return cm;
+  }
+  if (typeof cm === 'string' && HEX_FIELD.test(cm)) return hexToBigInt(cm);
+  throw new Error('Commitment must be a 0x hex string');
+}
+
+function assertOutputCommitments(transactions, commitmentLeaves = []) {
+  const existing = new Set(commitmentLeaves.map((cm) => bigIntToHex(commitmentField(cm))));
+  const seen = new Set();
+  for (const tx of transactions) {
+    if (!Array.isArray(tx?.utxoOuts)) continue;
+    for (const utxo of tx.utxoOuts) {
+      const hex = bigIntToHex(commitmentField(utxo?.cm));
+      if (seen.has(hex)) {
+        throw new Error(`Commitment ${hex} is repeated in this block`);
+      }
+      if (existing.has(hex)) {
+        throw new Error(`Commitment ${hex} is already in the commitment tree`);
+      }
+      seen.add(hex);
+    }
+  }
+}
 
 function hasValue(value) {
   return value !== undefined && value !== null && value !== '';
@@ -202,4 +231,6 @@ export function validateBlock(block, transactions = [], context = {}) {
     });
     acceptedSerials.push(...pourSerials(tx));
   }
+
+  assertOutputCommitments(transactions, context.commitmentLeaves ?? []);
 }

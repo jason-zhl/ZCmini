@@ -10,8 +10,9 @@
  */
 import path from 'path';
 import { fileURLToPath } from 'url';
+import { CommitmentTree } from './commitmentTree.js';
 import { createDb } from './db.js';
-import { transactionShapeCheck, validateBlock, validateTransaction } from './validate.js';
+import { commitmentField, transactionShapeCheck, validateBlock, validateTransaction } from './validate.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const DEFAULT_DATA_DIR = path.join(__dirname, 'data');
@@ -24,6 +25,11 @@ export class Server {
       this.db = createDb(dataDir ?? DEFAULT_DATA_DIR);
     }
     this.blockDifficulty = blockDifficulty;
+    this.commitments = new CommitmentTree();
+  }
+
+  resetCommitments() {
+    this.commitments.reset();
   }
 
   getDifficulty() {
@@ -50,8 +56,17 @@ export class Server {
       unminedTransactions,
       blockDifficulty: this.blockDifficulty,
       spentSerials,
+      commitmentLeaves: this.commitments.leaves(),
     });
-    return await this.db.appendBlock(block, transactions);
+    const leaves = this.commitments.outputsForBlock(transactions);
+    const height = await this.db.appendBlock(block, transactions);
+    this.commitments.insert(leaves);
+    return height;
+  }
+
+  /** Merkle path for a mined output commitment. `cm` is a 0x hex string or bigint. */
+  getCommitmentProof(cm) {
+    return this.commitments.proof(commitmentField(cm));
   }
 
   async getChain() {

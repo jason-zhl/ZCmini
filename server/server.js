@@ -23,7 +23,7 @@ app.post('/block', async (req, res) => {
     res.status(201).json({ ok: true, height: Number(height) });
   } catch (err) {
     console.error('POST /block', err);
-    const status = err.message?.startsWith('Block ') || err.message?.startsWith('Transactions ') || err.message?.startsWith('Body ')
+    const status = err.message?.startsWith('Block ') || err.message?.startsWith('Transactions ') || err.message?.startsWith('Body ') || err.message?.startsWith('Commitment ')
       ? 400
       : 500;
     res.status(status).json({ error: err.message });
@@ -71,6 +71,23 @@ app.post('/transaction', async (req, res) => {
     const status = err.message?.startsWith('Body ') || err.message?.startsWith('Transaction ')
       ? 400
       : 500;
+    res.status(status).json({ error: err.message });
+  }
+});
+
+app.get('/commitments/proof', (req, res) => {
+  try {
+    const cm = req.query.cm;
+    if (typeof cm !== 'string' || cm === '') {
+      return res.status(400).json({ error: 'Commitment cm is required' });
+    }
+    res.json(server.getCommitmentProof(cm));
+  } catch (err) {
+    if (err.code === 'NOT_FOUND') {
+      return res.status(404).json({ error: err.message });
+    }
+    const status = err.message?.startsWith('Commitment ') ? 400 : 500;
+    if (status === 500) console.error('GET /commitments/proof', err);
     res.status(status).json({ error: err.message });
   }
 });

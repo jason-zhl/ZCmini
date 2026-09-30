@@ -71,6 +71,15 @@ export class ServerAPI {
     return data?.transactions ?? [];
   }
 
+  /**
+   * Merkle path for a mined output commitment.
+   * Returns `{ root, leaf, index, pathIndices, siblings }` with field elements as 0x hex.
+   * `pathIndices[i] === 0` means the node is the left child at that level.
+   */
+  async getCommitmentProof(cm) {
+    return this.request(`/commitments/proof?cm=${encodeURIComponent(cm)}`);
+  }
+
   /** Submit a transaction to the mempool (unmined) */
   async submitTransaction(transaction) {
     return this.request('/transaction', {
