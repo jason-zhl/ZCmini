@@ -12,7 +12,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { CommitmentTree } from './commitmentTree.js';
 import { createDb } from './db.js';
-import { commitmentField, transactionShapeCheck, validateBlock, validateTransaction } from './validate.js';
+import { commitmentField, validateBlock, validateTransaction } from './validate.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const DEFAULT_DATA_DIR = path.join(__dirname, 'data');
@@ -96,10 +96,6 @@ export class Server {
   async addUnminedTransaction(transaction) {
     if (!transaction || typeof transaction !== 'object') {
       throw new Error('Body must include a transaction object');
-    }
-    transactionShapeCheck(transaction);
-    if (!transaction.hash) {
-      throw new Error('Transaction must have a hash field');
     }
     validateTransaction(transaction, {
       spentSerials: await this.db.getNullifiers(),

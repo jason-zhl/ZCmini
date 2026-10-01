@@ -36,18 +36,15 @@ export class Client {
     //   throw err;
     // }
 
-    const {coin : coin1 } = this.createCoin(100);
-    const {tx : tx1} = this.createMintTransaction(coin1);
-    const {coin : coin2 } = this.createCoin(200);
-    const {tx : tx2} = this.createMintTransaction(coin2);
+    const {tx : tx1, coin : coin1} = this.createMintTransaction(100);
+    const {tx : tx2, coin : coin2} = this.createMintTransaction(200);
 
     await this.api.submitTransaction(tx1);
     await this.api.submitTransaction(tx2);
 
     await this.minAndSendAllUnminedTransactions();
 
-    const {coin : coin3 } = this.createCoin(300);
-    const {tx : tx3} = this.createMintTransaction(coin3);
+    const {tx : tx3, coin : coin3} = this.createMintTransaction(300);
     await this.api.submitTransaction(tx3);
 
     await this.minAndSendAllUnminedTransactions();
@@ -82,15 +79,10 @@ export class Client {
     return { coin };
   }
 
-  createMintTransaction(coin) {
-    const sn = coin.sn;
+  createMintTransaction(value) {
+    const { coin } = this.createCoin(value);
     // TODO: replace owner identification with encryption (BabyJubJub)
-    const encrypted_secrets = {
-      owner: utils.bigIntToHex(this.privateKey),
-      key_salt: coin.key_salt,
-      key_cm_salt: coin.key_cm_salt,
-    };
-    const mint_tx = { value: coin.value, key_cm : coin.key_cm, cm_salt : coin.cm_salt, cm : coin.cm, encrypted_secrets };
+    const mint_tx = { cm : coin.cm, encrypted_secrets : coin };
     const tx = { 
       metadata: { 
         tx_type : 'mint'
@@ -100,10 +92,10 @@ export class Client {
       utxoOuts: [ mint_tx ],
     };
     tx.hash = utils.getTransactionHash(tx);
-    return { sn, tx };
+    return { tx, coin };
   }
 
-  async createPourTransaction(inputCoin, merkleProof, send_value, recipientKey) {
+  async createPourTransaction(inputCoin, send_value, recipientKey) {
     if (inputCoin.value < send_value) {
       throw new Error('Insufficient funds');
     }
@@ -111,35 +103,36 @@ export class Client {
     const { coin: send_coin } = this.createCoin(send_value);
     const { coin: change_coin } = this.createCoin(change_value);
 
-    const oldSn = utils.bigIntToHex(poseidon2([
-      utils.hexToBigInt(send_coin.key_salt),
-      this.privateKey,
-    ]));
-    let proof, publicSignals;
-    try {
-      const result = await zk.buildProof({
-        privateKey: this.privateKey,
-        inputCoin,
-        c1,
-        c2,
-        merkleProof,
-      });
-      proof = result.proof;
-      publicSignals = result.publicSignals;
-    } catch (err) {
-      console.error('buildProof error:', err instanceof Error ? err.message : String(err));
-      throw err;
-    }
+    // let proof, publicSignals;
+    // try {
+    //   const result = await zk.buildProof({
+    //     privateKey: this.privateKey,
+    //     inputCoin,
+    //     c1,
+    //     c2,
+    //     merkleProof,
+    //   });
+    //   proof = result.proof;
+    //   publicSignals = result.publicSignals;
+    // } catch (err) {
+    //   console.error('buildProof error:', err instanceof Error ? err.message : String(err));
+    //   throw err;
+    // }
+
     const tx = {
       metadata: { 
         tx_type : 'pour'
       },
-      utxoIns: [{ cm: inputCoin.cm, sn: oldSn }],
-      utxoOuts: [{ cm: c1.cm }, { cm: c2.cm }],
-      proof,
-      publicSignals,
+      utxoIns: [inputCoin.sn],
+      utxoOuts: [
+        { cm: send_coin.cm, encrypted_secrets: send_coin },
+        { cm: change_coin.cm, encrypted_secrets: change_coin },
+      ],
+      // proof,
+      // publicSignals,
     };
-    return { tx, c1, c2 };
+    tx.hash = utils.getTransactionHash(tx);
+    return tx;
   }
 
   async createBlock(transactions) {

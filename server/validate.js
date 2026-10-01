@@ -1,9 +1,7 @@
 /**
- * Transaction shape is checked when a tx enters the mempool
- * (`transactionShapeCheck`, called from `addUnminedTransaction`).
- * `validateTransaction` checks one mint or pour. `validateBlock` checks block
- * shape, pool membership, chain continuity, merkle root, block hash, proof of
- * work, and each included transaction.
+ * `validateTransaction` checks one mint or pour, including its shape.
+ * `validateBlock` checks block shape, pool membership, chain continuity,
+ * merkle root, block hash, proof of work, and each included transaction.
  *
  * Throws an Error with a descriptive message if validation fails.
  *
@@ -16,10 +14,7 @@ import { bigIntToHex, getBlockHash, getMerkleRoot, hexToBigInt, pourSerials, ver
 
 export const BLOCK_FIELDS = ['hash', 'previous', 'root', 'nonce'];
 export const TX_FIELDS = ['utxoIns', 'utxoOuts'];
-export const UTXO_IN_FIELDS = ['cm'];
-export const UTXO_IN_POUR_FIELDS = ['sn'];
-export const UTXO_OUT_FIELDS = ['cm'];
-export const UTXO_OUT_MINT_FIELDS = ['value', 'key_cm', 'cm_salt'];
+export const UTXO_OUT_FIELDS = ['cm', 'encrypted_secrets'];
 
 const HEX256 = /^0x[0-9a-f]{64}$/;
 const HEX_FIELD = /^0x[0-9a-fA-F]+$/;
@@ -34,24 +29,6 @@ export function commitmentField(cm) {
   throw new Error('Commitment must be a 0x hex string');
 }
 
-function assertOutputCommitments(transactions, commitmentLeaves = []) {
-  const existing = new Set(commitmentLeaves.map((cm) => bigIntToHex(commitmentField(cm))));
-  const seen = new Set();
-  for (const tx of transactions) {
-    if (!Array.isArray(tx?.utxoOuts)) continue;
-    for (const utxo of tx.utxoOuts) {
-      const hex = bigIntToHex(commitmentField(utxo?.cm));
-      if (seen.has(hex)) {
-        throw new Error(`Commitment ${hex} is repeated in this block`);
-      }
-      if (existing.has(hex)) {
-        throw new Error(`Commitment ${hex} is already in the commitment tree`);
-      }
-      seen.add(hex);
-    }
-  }
-}
-
 function hasValue(value) {
   return value !== undefined && value !== null && value !== '';
 }
@@ -61,6 +38,7 @@ function isHex256(value) {
 }
 
 export function transactionShapeCheck(tx, label = 'Transaction') {
+  // Non-null object with metadata.tx_type of mint or pour.
   if (!tx || typeof tx !== 'object' || Array.isArray(tx)) {
     throw new Error(`${label} must be a non-null object`);
   }
@@ -70,12 +48,50 @@ export function transactionShapeCheck(tx, label = 'Transaction') {
     throw new Error(`${label} must have metadata.tx_type of mint or pour`);
   }
 
+  // utxoIns and utxoOuts are arrays.
   for (const field of TX_FIELDS) {
     if (!Array.isArray(tx[field])) {
       throw new Error(`${label} ${field} must be an array`);
     }
   }
 
+  // A hash field is present so the tx can be stored and later matched.
+  if (!hasValue(tx.hash)) {
+    throw new Error(`${label} must have a hash field`);
+  }
+
+  // utxoIns are serial numbers: a non-negative bigint, or 0x and 64 lowercase hex digits.
+  for (let j = 0; j < tx.utxoIns.length; j++) {
+    const value = tx.utxoIns[j];
+    let sn = null;
+    if (typeof value === 'bigint') {
+      if (value >= 0n) sn = bigIntToHex(value);
+    } else if (isHex256(value)) {
+      sn = value;
+    }
+    if (!sn) {
+      throw new Error(`${label} utxoIns[${j}] must be a serial number`);
+    }
+    tx.utxoIns[j] = sn;
+  }
+
+  // Each output is an object with only cm and encrypted_secrets. Do not read encrypted_secrets.
+  for (let j = 0; j < tx.utxoOuts.length; j++) {
+    const utxo = tx.utxoOuts[j];
+    if (!utxo || typeof utxo !== 'object' || Array.isArray(utxo)) {
+      throw new Error(`${label} utxoOuts[${j}] must be an object`);
+    }
+    const keys = Object.keys(utxo);
+    const allowed = new Set(UTXO_OUT_FIELDS);
+    if (keys.length !== allowed.size || keys.some((key) => !allowed.has(key))) {
+      throw new Error(`${label} utxoOuts[${j}] must have only cm and encrypted_secrets`);
+    }
+    if (!hasValue(utxo.cm)) {
+      throw new Error(`${label} utxoOuts[${j}] must have a cm`);
+    }
+  }
+
+  // Mint: zero inputs, exactly one output. Pour: one or two inputs, exactly two outputs.
   if (txType === 'mint') {
     if (tx.utxoIns.length !== 0) {
       throw new Error(`${label} mint must have no inputs`);
@@ -91,46 +107,18 @@ export function transactionShapeCheck(tx, label = 'Transaction') {
       throw new Error(`${label} pour must have exactly two outputs`);
     }
   }
-
-  const inFields = txType === 'pour' ? [...UTXO_IN_FIELDS, ...UTXO_IN_POUR_FIELDS] : UTXO_IN_FIELDS;
-  for (let j = 0; j < tx.utxoIns.length; j++) {
-    const utxo = tx.utxoIns[j];
-    if (!utxo || typeof utxo !== 'object' || Array.isArray(utxo)) {
-      throw new Error(`${label} utxoIns[${j}] must be an object`);
-    }
-    for (const field of inFields) {
-      if (!hasValue(utxo[field])) {
-        throw new Error(`${label} utxoIns[${j}] must have a ${field}`);
-      }
-    }
-  }
-
-  const outFields = txType === 'mint' ? [...UTXO_OUT_FIELDS, ...UTXO_OUT_MINT_FIELDS] : UTXO_OUT_FIELDS;
-  for (let j = 0; j < tx.utxoOuts.length; j++) {
-    const utxo = tx.utxoOuts[j];
-    if (!utxo || typeof utxo !== 'object' || Array.isArray(utxo)) {
-      throw new Error(`${label} utxoOuts[${j}] must be an object`);
-    }
-    for (const field of outFields) {
-      if (!hasValue(utxo[field])) {
-        throw new Error(`${label} utxoOuts[${j}] must have a ${field}`);
-      }
-    }
-  }
 }
 
 export function validateTransaction(tx, context = {}) {
+  transactionShapeCheck(tx);
+
+  // Nullifier uniqueness. Each sn is not already spent, and two inputs in this tx differ.
   const serials = pourSerials(tx);
   if (serials.length === 0) return;
-  const accepted = context.acceptedSerials ?? [];
-  assertSerialsAvailable([...accepted, ...serials], {
-    spentSerials: context.spentSerials ?? [],
-    unminedNullifiers: context.unminedNullifiers ?? [],
-    txHash: context.txHash ?? tx?.hash,
-  });
-}
 
-function assertSerialsAvailable(serials, { spentSerials = [], unminedNullifiers = [], txHash } = {}) {
+  const spentSerials = context.spentSerials ?? [];
+  const unminedNullifiers = context.unminedNullifiers ?? [];
+  const txHash = context.txHash ?? tx?.hash;
   const spent = new Set();
   for (const entry of spentSerials) {
     const sn = entry?.sn ?? entry;
@@ -142,7 +130,7 @@ function assertSerialsAvailable(serials, { spentSerials = [], unminedNullifiers 
   }
 
   const seen = new Set();
-  for (const { sn } of serials) {
+  for (const { sn } of [...(context.acceptedSerials ?? []), ...serials]) {
     if (seen.has(sn)) {
       throw new Error(`Serial number ${sn} is repeated`);
     }
@@ -223,6 +211,7 @@ export function validateBlock(block, transactions = [], context = {}) {
     throw new Error('Block hash does not meet proof of work');
   }
 
+  // Nullifier uniqueness, including sns already accepted from this block.
   const acceptedSerials = [];
   for (const tx of transactions) {
     validateTransaction(tx, {
@@ -232,5 +221,23 @@ export function validateBlock(block, transactions = [], context = {}) {
     acceptedSerials.push(...pourSerials(tx));
   }
 
-  assertOutputCommitments(transactions, context.commitmentLeaves ?? []);
+  // Commitment uniqueness. A cm already in the tree is invalid.
+  // Repeated cms inside this block are a block rule.
+  const existingCommitments = new Set(
+    (context.commitmentLeaves ?? []).map((cm) => bigIntToHex(commitmentField(cm))),
+  );
+  const seenCommitments = new Set();
+  for (const tx of transactions) {
+    if (!Array.isArray(tx?.utxoOuts)) continue;
+    for (const utxo of tx.utxoOuts) {
+      const hex = bigIntToHex(commitmentField(utxo?.cm));
+      if (seenCommitments.has(hex)) {
+        throw new Error(`Commitment ${hex} is repeated in this block`);
+      }
+      if (existingCommitments.has(hex)) {
+        throw new Error(`Commitment ${hex} is already in the commitment tree`);
+      }
+      seenCommitments.add(hex);
+    }
+  }
 }

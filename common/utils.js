@@ -22,7 +22,8 @@ export function getTransactionHash(tx) {
     if (tx.hash) return tx.hash;
     let input_root = 0n;
     for (let utxoIn of tx.utxoIns) {
-      input_root = poseidon2([input_root, hexToBigInt(utxoIn.cm)]);
+      const sn = typeof utxoIn === 'bigint' ? utxoIn : hexToBigInt(utxoIn);
+      input_root = poseidon2([input_root, sn]);
     }
 
     let output_root = 0n;
@@ -42,7 +43,8 @@ export function pourSerials(tx) {
   if (tx?.metadata?.tx_type !== 'pour' || !Array.isArray(tx.utxoIns)) return [];
   const serials = [];
   for (let inputIndex = 0; inputIndex < tx.utxoIns.length; inputIndex++) {
-    const sn = tx.utxoIns[inputIndex]?.sn;
+    const raw = tx.utxoIns[inputIndex];
+    const sn = typeof raw === 'bigint' ? (raw < 0n ? null : bigIntToHex(raw)) : raw;
     if (sn == null || sn === '') continue;
     serials.push({ sn, inputIndex });
   }
