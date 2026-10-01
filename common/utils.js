@@ -40,7 +40,10 @@ export function getTransactionHash(tx) {
   }
 
 export function pourSerials(tx) {
-  if (tx?.metadata?.tx_type !== 'pour' || !Array.isArray(tx.utxoIns)) return [];
+  if (!Array.isArray(tx?.utxoIns) || (tx.utxoIns.length !== 0 && tx.utxoIns.length !== 1)) {
+    throw new Error('utxoIns length must be 0 or 1');
+  }
+  if (tx.utxoIns.length === 0) return [];
   const serials = [];
   for (let inputIndex = 0; inputIndex < tx.utxoIns.length; inputIndex++) {
     const raw = tx.utxoIns[inputIndex];

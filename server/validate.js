@@ -38,14 +38,9 @@ function isHex256(value) {
 }
 
 export function transactionShapeCheck(tx, label = 'Transaction') {
-  // Non-null object with metadata.tx_type of mint or pour.
+  // Non-null object. Mint and pour are distinguished by utxoIns length.
   if (!tx || typeof tx !== 'object' || Array.isArray(tx)) {
     throw new Error(`${label} must be a non-null object`);
-  }
-
-  const txType = tx.metadata?.tx_type;
-  if (txType !== 'mint' && txType !== 'pour') {
-    throw new Error(`${label} must have metadata.tx_type of mint or pour`);
   }
 
   // utxoIns and utxoOuts are arrays.
@@ -53,6 +48,11 @@ export function transactionShapeCheck(tx, label = 'Transaction') {
     if (!Array.isArray(tx[field])) {
       throw new Error(`${label} ${field} must be an array`);
     }
+  }
+
+  // Zero inputs is a mint. One input is a pour.
+  if (tx.utxoIns.length !== 0 && tx.utxoIns.length !== 1) {
+    throw new Error(`${label} utxoIns length must be 0 or 1`);
   }
 
   // A hash field is present so the tx can be stored and later matched.
@@ -91,28 +91,20 @@ export function transactionShapeCheck(tx, label = 'Transaction') {
     }
   }
 
-  // Mint: zero inputs, exactly one output. Pour: one or two inputs, exactly two outputs.
-  if (txType === 'mint') {
-    if (tx.utxoIns.length !== 0) {
-      throw new Error(`${label} mint must have no inputs`);
-    }
+  // Mint: exactly one output. Pour: exactly two outputs.
+  if (tx.utxoIns.length === 0) {
     if (tx.utxoOuts.length !== 1) {
       throw new Error(`${label} mint must have exactly one output`);
     }
-  } else {
-    if (tx.utxoIns.length < 1 || tx.utxoIns.length > 2) {
-      throw new Error(`${label} pour must have one or two inputs`);
-    }
-    if (tx.utxoOuts.length !== 2) {
-      throw new Error(`${label} pour must have exactly two outputs`);
-    }
+  } else if (tx.utxoOuts.length !== 2) {
+    throw new Error(`${label} pour must have exactly two outputs`);
   }
 }
 
 export function validateTransaction(tx, context = {}) {
   transactionShapeCheck(tx);
 
-  // Nullifier uniqueness. Each sn is not already spent, and two inputs in this tx differ.
+  // Nullifier uniqueness. Each sn is not already spent, and is not repeated in this block.
   const serials = pourSerials(tx);
   if (serials.length === 0) return;
 

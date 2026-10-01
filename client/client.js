@@ -84,9 +84,6 @@ export class Client {
     // TODO: replace owner identification with encryption (BabyJubJub)
     const mint_tx = { cm : coin.cm, encrypted_secrets : coin };
     const tx = { 
-      metadata: { 
-        tx_type : 'mint'
-      },
       hash: null,
       utxoIns: [],
       utxoOuts: [ mint_tx ],
@@ -120,9 +117,6 @@ export class Client {
     // }
 
     const tx = {
-      metadata: { 
-        tx_type : 'pour'
-      },
       utxoIns: [inputCoin.sn],
       utxoOuts: [
         { cm: send_coin.cm, encrypted_secrets: send_coin },
