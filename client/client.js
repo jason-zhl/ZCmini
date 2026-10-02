@@ -129,31 +129,24 @@ export class Client {
     return tx;
   }
 
-  async createBlock(transactions) {
-    const lastBlock = await this.api.getLatestBlocks(1);
-    const previousHash = lastBlock.length === 0 ? null : lastBlock[0].hash;
+  async createBlock(transactions, difficulty, previousHash) {
     const block = {
       hash: null,
       previous: previousHash,
       root: utils.getMerkleRoot(transactions.map(tx => utils.getTransactionHash(tx))),
-      nonce: null,
+      nonce: '0x0',
     };
-
-    block.hash = utils.getBlockHash(block);
-    return block;
-  }
-
-  async mineBlock(block) {
-    const blockDifficulty = Number(await this.api.getBlockDifficulty());
-    block.nonce = utils.findNonce(block, blockDifficulty);
+    block.nonce = utils.findNonce(block, difficulty);
     block.hash = utils.getBlockHash(block);
     return block;
   }
 
   async minAndSendAllUnminedTransactions() {
     const unmined = await this.api.getUnminedTransactions();
-    const block = await this.createBlock(unmined);
-    const mined_block = await this.mineBlock(block);
+    const difficulty = Number(await this.api.getBlockDifficulty());
+    const lastBlock = await this.api.getLatestBlocks(1);
+    const previousHash = lastBlock.length === 0 ? null : lastBlock[0].hash;
+    const mined_block = await this.createBlock(unmined, difficulty, previousHash);
     const result = await this.api.sendMinedBlock(mined_block, unmined);
     console.log('sendMinedBlock result:', result, 'height:', result?.height);
   }
