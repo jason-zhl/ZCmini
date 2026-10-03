@@ -8,7 +8,7 @@ const require = createRequire(import.meta.url);
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-const circuit_name = 'tester';
+const circuit_name = 'pour';
 const WCBuilder = require(path.join(__dirname, `../zk/${circuit_name}/${circuit_name}_js/witness_calculator.js`));
 const wasmBuffer = readFileSync(path.join(__dirname, `../zk/${circuit_name}/${circuit_name}_js/${circuit_name}.wasm`));
 const WC = await WCBuilder(wasmBuffer);

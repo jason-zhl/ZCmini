@@ -23,34 +23,41 @@ export class Client {
 
   async test() {
     console.log('Running Client Test');
-
-    // const tester_input = { privateKey: this.privateKey };
-    // try {
-    //   const { proof, publicSignals } = await zk.buildProof(tester_input);
-    //   const isValid = await zk.verifyProof(publicSignals, proof);
-    //   console.log('Proof is valid:', isValid);
-    //   console.log('Public signals:', publicSignals);
-    //   console.log('My public key:', this.transmissionKey);
-    // } catch (err) {
-    //   console.error('buildProof error:', err instanceof Error ? err.message : String(err));
-    //   throw err;
-    // }
-
+    
     const {tx : tx1, coin : coin1} = this.createMintTransaction(100);
-    const {tx : tx2, coin : coin2} = this.createMintTransaction(200);
-
     await this.api.submitTransaction(tx1);
-    await this.api.submitTransaction(tx2);
+    await this.mineAndSendAllUnminedTransactions();
 
-    await this.minAndSendAllUnminedTransactions();
+    const merkleProof = await this.api.getCommitmentProof(utils.bigIntToHex(coin1.cm));
+    console.dir(merkleProof, { depth: null });
 
-    const {tx : tx3, coin : coin3} = this.createMintTransaction(300);
-    await this.api.submitTransaction(tx3);
+    try {
+      const { proof, publicSignals } = await zk.buildProof(pour_input);
+      const isValid = await zk.verifyProof(publicSignals, proof);
+      console.log('Proof is valid:', isValid);
+      console.log('Public signals:', publicSignals);
+      console.log('True CM:', coin1.cm);
+      console.log('True SN:', coin1.sn);
+    } catch (err) {
+      console.error('buildProof error:', err instanceof Error ? err.message : String(err));
+      throw err;
+    }
 
-    await this.minAndSendAllUnminedTransactions();
-    const chain = await this.api.getChain();
-    console.log('returned chain:');
-    console.dir(chain, { depth: null });
+    // const {tx : tx1, coin : coin1} = this.createMintTransaction(100);
+    // const {tx : tx2, coin : coin2} = this.createMintTransaction(200);
+
+    // await this.api.submitTransaction(tx1);
+    // await this.api.submitTransaction(tx2);
+
+    // await this.mineAndSendAllUnminedTransactions();
+
+    // const {tx : tx3, coin : coin3} = this.createMintTransaction(300);
+    // await this.api.submitTransaction(tx3);
+
+    // await this.minAndSendAllUnminedTransactions();
+    // const chain = await this.api.getChain();
+    // console.log('returned chain:');
+    // console.dir(chain, { depth: null });
   }
 
   createCoin(value) {
@@ -59,14 +66,14 @@ export class Client {
     const keySalt = utils.randomBigInt();
     const sn = poseidon2([this.privateKey, keySalt]);
 
-    // k = com_r (a_{pk} || rho)
+    // keyCm = h( keyCmSalt || a_{pk} || rho)
     const keyCmSalt = utils.randomBigInt();
-    const keyCm = poseidon3([this.transmissionKey, keyCmSalt, keyCmSalt]);
+    const keyCm = poseidon3([keyCmSalt, this.transmissionKey, keySalt]);
 
-    // cm = com_r (v || a_{pk} || s)
+    // cm = h( cmSalt || v || keyCm )
     const cmSalt = utils.randomBigInt();
-    const cm = poseidon3([valueField, this.transmissionKey, cmSalt]);
-    const coin = Object.fromEntries(Object.entries({
+    const cm = poseidon3([cmSalt, valueField, keyCm]);
+    const coin = {
       apk: this.transmissionKey,
       key_salt: keySalt,
       key_cm_salt: keyCmSalt,
@@ -74,15 +81,16 @@ export class Client {
       sn,
       key_cm: keyCm,
       cm,
-    }).map(([field, fieldValue]) => [field, utils.bigIntToHex(fieldValue)]));
-    coin.value = value;
+      value: valueField,
+    };
     return { coin };
   }
 
   createMintTransaction(value) {
     const { coin } = this.createCoin(value);
+    const published = Object.fromEntries(Object.entries(coin).map(([field, fieldValue]) => [field, utils.bigIntToHex(fieldValue)]));
     // TODO: replace owner identification with encryption (BabyJubJub)
-    const mint_tx = { cm : coin.cm, encrypted_secrets : coin };
+    const mint_tx = { cm : published.cm, encrypted_secrets : published };
     const tx = { 
       hash: null,
       utxoIns: [],
@@ -93,37 +101,47 @@ export class Client {
   }
 
   async createPourTransaction(inputCoin, send_value, recipientKey) {
-    if (inputCoin.value < send_value) {
+    const sendValue = BigInt(send_value);
+    if (inputCoin.value < sendValue) {
       throw new Error('Insufficient funds');
     }
-    const change_value = inputCoin.value - send_value;
-    const { coin: send_coin } = this.createCoin(send_value);
-    const { coin: change_coin } = this.createCoin(change_value);
+    const changeValue = inputCoin.value - sendValue;
+    const { coin: send_coin } = this.createCoin(sendValue);
+    const { coin: change_coin } = this.createCoin(changeValue);
 
-    // let proof, publicSignals;
-    // try {
-    //   const result = await zk.buildProof({
-    //     privateKey: this.privateKey,
-    //     inputCoin,
-    //     c1,
-    //     c2,
-    //     merkleProof,
-    //   });
-    //   proof = result.proof;
-    //   publicSignals = result.publicSignals;
-    // } catch (err) {
-    //   console.error('buildProof error:', err instanceof Error ? err.message : String(err));
-    //   throw err;
-    // }
+    const pour_input = { 
+      ask: this.privateKey, 
+      inputNotes: [ [ coin1.key_salt, coin1.key_cm_salt, coin1.cm_salt, coin1.value ] ],
+      merkleRoot: merkleProof.root,
+      merkleSiblings: [ merkleProof.siblings ],
+      merklePathIndices: [ merkleProof.pathIndices ],
+      rpk: recipientKey,
+      outputNotes: [ 
+        [ change_coin.key_salt, change_coin.key_cm_salt, change_coin.cm_salt, change_coin.value ], 
+        [ send_coin.key_salt, send_coin.key_cm_salt, send_coin.cm_salt, send_coin.value ] 
+      ],
+    };
 
+    let proof, publicSignals;
+    try {
+      const result = await zk.buildProof(pour_input);
+      proof = result.proof;
+      publicSignals = result.publicSignals;
+    } catch (err) {
+      console.error('buildProof error:', err instanceof Error ? err.message : String(err));
+      throw err;
+    }
+
+    const publishedSend = Object.fromEntries(Object.entries(send_coin).map(([field, fieldValue]) => [field, utils.bigIntToHex(fieldValue)]));
+    const publishedChange = Object.fromEntries(Object.entries(change_coin).map(([field, fieldValue]) => [field, utils.bigIntToHex(fieldValue)]));
     const tx = {
       utxoIns: [inputCoin.sn],
       utxoOuts: [
-        { cm: send_coin.cm, encrypted_secrets: send_coin },
-        { cm: change_coin.cm, encrypted_secrets: change_coin },
+        { cm: publishedSend.cm, encrypted_secrets: publishedSend },
+        { cm: publishedChange.cm, encrypted_secrets: publishedChange },
       ],
-      // proof,
-      // publicSignals,
+      proof,
+      publicSignals,
     };
     tx.hash = utils.getTransactionHash(tx);
     return tx;
@@ -141,7 +159,7 @@ export class Client {
     return block;
   }
 
-  async minAndSendAllUnminedTransactions() {
+  async mineAndSendAllUnminedTransactions() {
     const unmined = await this.api.getUnminedTransactions();
     const difficulty = Number(await this.api.getBlockDifficulty());
     const lastBlock = await this.api.getLatestBlocks(1);
