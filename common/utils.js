@@ -18,6 +18,32 @@ export function hexToBigInt(hex) {
   return (hex !== null) ? BigInt(hex) : 0n;
 }
 
+const HEX_STRING = /^0x[0-9a-fA-F]+$/;
+
+function mapJson(value, convert) {
+  const converted = convert(value);
+  if (converted !== undefined) return converted;
+  if (Array.isArray(value)) return value.map((item) => mapJson(item, convert));
+  if (value !== null && typeof value === 'object') {
+    return Object.fromEntries(
+      Object.entries(value).map(([field, fieldValue]) => [field, mapJson(fieldValue, convert)])
+    );
+  }
+  return value;
+}
+
+/** Copy a JSON value, converting every bigint to a 0x hex string at any depth. */
+export function bigIntsToHex(value) {
+  return mapJson(value, (item) => (typeof item === 'bigint' ? bigIntToHex(item) : undefined));
+}
+
+/** Inverse of bigIntsToHex: copy a JSON value, converting every 0x hex string back to bigint. */
+export function hexToBigInts(value) {
+  return mapJson(value, (item) => (
+    typeof item === 'string' && HEX_STRING.test(item) ? hexToBigInt(item) : undefined
+  ));
+}
+
 export function getTransactionHash(tx) {
     if (tx.hash) return tx.hash;
     let input_root = 0n;
@@ -40,8 +66,8 @@ export function getTransactionHash(tx) {
   }
 
 export function pourSerials(tx) {
-  if (!Array.isArray(tx?.utxoIns) || (tx.utxoIns.length !== 0 && tx.utxoIns.length !== 1)) {
-    throw new Error('utxoIns length must be 0 or 1');
+  if (!Array.isArray(tx?.utxoIns)) {
+    throw new Error('utxoIns must be an array');
   }
   if (tx.utxoIns.length === 0) return [];
   const serials = [];

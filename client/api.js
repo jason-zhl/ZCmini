@@ -1,8 +1,4 @@
-import { bigIntToHex } from '../common/utils.js';
-
-function encodeBigint(_key, value) {
-  return typeof value === 'bigint' ? bigIntToHex(value) : value;
-}
+import { bigIntsToHex } from '../common/utils.js';
 
 const DEFAULT_BASE_URL = 'http://localhost:3000';
 
@@ -41,7 +37,7 @@ export class ServerAPI {
   async sendMinedBlock(block, transactions = []) {
     return this.request('/block', {
       method: 'POST',
-      body: JSON.stringify({ block, transactions }, encodeBigint),
+      body: JSON.stringify(bigIntsToHex({ block, transactions })),
     });
   }
 
@@ -84,7 +80,7 @@ export class ServerAPI {
   async submitTransaction(transaction) {
     return this.request('/transaction', {
       method: 'POST',
-      body: JSON.stringify({ transaction }, encodeBigint),
+      body: JSON.stringify(bigIntsToHex({ transaction })),
     });
   }
 }

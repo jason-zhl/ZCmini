@@ -10,6 +10,7 @@
  * @param {object} context - length, tipHash, unminedTransactions, blockDifficulty, spentSerials, commitmentLeaves
  */
 
+import { verifyProof } from "../client/zk.js";
 import { bigIntToHex, getBlockHash, getMerkleRoot, hexToBigInt, pourSerials, verifyBlockHash } from "../common/utils.js";
 
 export const BLOCK_FIELDS = ['hash', 'previous', 'root', 'nonce'];
@@ -37,6 +38,25 @@ function isHex256(value) {
   return typeof value === 'string' && HEX256.test(value);
 }
 
+function expectHexTree(value, label) {
+  if (isHex256(value)) return;
+  if (!Array.isArray(value)) {
+    throw new Error(`${label} must be hex strings`);
+  }
+  for (const item of value) expectHexTree(item, label);
+}
+
+function pourProofShapeCheck(tx, label) {
+  if (tx.utxoIns.length < 1 || (tx.proof == null && tx.publicSignals == null)) return;
+  if (tx.proof == null || tx.publicSignals == null) {
+    throw new Error(`${label} pour must include proof and publicSignals`);
+  }
+  expectHexTree(tx.publicSignals, `${label} pour publicSignals`);
+  expectHexTree(tx.proof?.pi_a, `${label} pour proof`);
+  expectHexTree(tx.proof?.pi_b, `${label} pour proof`);
+  expectHexTree(tx.proof?.pi_c, `${label} pour proof`);
+}
+
 export function transactionShapeCheck(tx, label = 'Transaction') {
   // Non-null object. Mint and pour are distinguished by utxoIns length.
   if (!tx || typeof tx !== 'object' || Array.isArray(tx)) {
@@ -48,11 +68,6 @@ export function transactionShapeCheck(tx, label = 'Transaction') {
     if (!Array.isArray(tx[field])) {
       throw new Error(`${label} ${field} must be an array`);
     }
-  }
-
-  // Zero inputs is a mint. One input is a pour.
-  if (tx.utxoIns.length !== 0 && tx.utxoIns.length !== 1) {
-    throw new Error(`${label} utxoIns length must be 0 or 1`);
   }
 
   // A hash field is present so the tx can be stored and later matched.
@@ -91,7 +106,7 @@ export function transactionShapeCheck(tx, label = 'Transaction') {
     }
   }
 
-  // Mint: exactly one output. Pour: exactly two outputs.
+  // Mint (no inputs): exactly one output. Pour (one or more inputs): exactly two outputs.
   if (tx.utxoIns.length === 0) {
     if (tx.utxoOuts.length !== 1) {
       throw new Error(`${label} mint must have exactly one output`);
@@ -99,10 +114,17 @@ export function transactionShapeCheck(tx, label = 'Transaction') {
   } else if (tx.utxoOuts.length !== 2) {
     throw new Error(`${label} pour must have exactly two outputs`);
   }
+
+  pourProofShapeCheck(tx, label);
 }
 
-export function validateTransaction(tx, context = {}) {
+export async function validateTransaction(tx, context = {}) {
   transactionShapeCheck(tx);
+
+  if (tx.utxoIns.length >= 1 && tx.proof != null && tx.publicSignals != null) {
+    const valid = await verifyProof(tx.publicSignals, tx.proof);
+    if (!valid) throw new Error('Transaction pour proof is invalid');
+  }
 
   // Nullifier uniqueness. Each sn is not already spent, and is not repeated in this block.
   const serials = pourSerials(tx);
@@ -136,7 +158,7 @@ export function validateTransaction(tx, context = {}) {
   }
 }
 
-export function validateBlock(block, transactions = [], context = {}) {
+export async function validateBlock(block, transactions = [], context = {}) {
   // Block shape
   if (!block || typeof block !== 'object' || Array.isArray(block)) {
     throw new Error('Block must be a non-null object');
@@ -206,7 +228,7 @@ export function validateBlock(block, transactions = [], context = {}) {
   // Nullifier uniqueness, including sns already accepted from this block.
   const acceptedSerials = [];
   for (const tx of transactions) {
-    validateTransaction(tx, {
+    await validateTransaction(tx, {
       spentSerials: context.spentSerials ?? [],
       acceptedSerials,
     });

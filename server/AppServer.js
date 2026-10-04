@@ -50,7 +50,7 @@ export class Server {
     const unminedTransactions = await this.db.getUnminedTransactions();
     const spentSerials = await this.db.getNullifiers();
     const tipHash = length === 0 ? null : (await this.db.getBlock(length - 1)).hash;
-    validateBlock(block, transactions, {
+    await validateBlock(block, transactions, {
       length,
       tipHash,
       unminedTransactions,
@@ -97,7 +97,7 @@ export class Server {
     if (!transaction || typeof transaction !== 'object') {
       throw new Error('Body must include a transaction object');
     }
-    validateTransaction(transaction, {
+    await validateTransaction(transaction, {
       spentSerials: await this.db.getNullifiers(),
       unminedNullifiers: await this.db.getUnminedNullifiers(),
     });
