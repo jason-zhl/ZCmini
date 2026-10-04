@@ -10,7 +10,7 @@
  * @param {object} context - length, tipHash, unminedTransactions, blockDifficulty, spentSerials, commitmentLeaves
  */
 
-import { verifyProof } from "../client/zk.js";
+import { verifyProof } from "../common/zk.js";
 import { bigIntToHex, getBlockHash, getMerkleRoot, hexToBigInt, pourSerials, verifyBlockHash } from "../common/utils.js";
 
 export const BLOCK_FIELDS = ['hash', 'previous', 'root', 'nonce'];

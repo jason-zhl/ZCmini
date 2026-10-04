@@ -2,7 +2,7 @@ import { generateMnemonic, mnemonicToEntropy } from '@scure/bip39';
 import { wordlist } from '@scure/bip39/wordlists/english.js';
 import { poseidon1, poseidon2, poseidon3 } from 'poseidon-lite';
 import * as utils from '../common/utils.js';
-import * as zk from './zk.js';
+import * as zk from '../common/zk.js';
 import { ServerAPI } from './api.js';
 
 function mnemonicToBigInt(mnemonic) {
