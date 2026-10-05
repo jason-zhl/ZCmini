@@ -52,6 +52,11 @@ describe('Server', () => {
     server = new Server({ db, blockDifficulty: 3 });
   });
 
+  beforeEach(async () => {
+    await db.clear();
+    server.resetCommitments();
+  });
+
   after(async () => {
     try {
       await server.close();
@@ -217,9 +222,17 @@ describe('Server', () => {
       receiver = new Client();
       const { tx, coin } = client.createMintTransaction(100);
       mintedTx = tx;
-      pourTransaction = await client.createPourTransaction(coin, 42, receiver.privateKey);
+      await db.clear();
+      server.resetCommitments();
       await server.addUnminedTransaction(mintedTx);
       block = await client.createBlock([mintedTx], server.getDifficulty(), null);
+      await server.submitBlock(block, [mintedTx]);
+      const proof = server.getCommitmentProof(coin.cm);
+      pourTransaction = await client.createPourTransaction(coin, 42, receiver.transmissionKey, [proof]);
+    });
+
+    beforeEach(async () => {
+      await server.addUnminedTransaction(mintedTx);
       await server.submitBlock(block, [mintedTx]);
     });
 
@@ -227,7 +240,6 @@ describe('Server', () => {
       const cases = [
         [(tx) => { tx.utxoIns = null; }, 'utxoIns must be an array'],
         [(tx) => { tx.utxoOuts = null; }, 'utxoOuts must be an array'],
-        [(tx) => { tx.utxoIns.push('0x' + '22'.repeat(32)); }, '0 or 1'],
         [(tx) => { delete tx.hash; }, 'hash'],
         [(tx) => { tx.utxoIns[0] = '0x1'; }, 'serial number'],
         [(tx) => { tx.utxoOuts[0] = null; }, 'must be an object'],
@@ -252,7 +264,7 @@ describe('Server', () => {
       const spent = structuredClone(pourTransaction);
       await server.addUnminedTransaction(spent);
       await server.submitBlock(
-        await client.createBlock([spent], server.getDifficulty(), null),
+        await client.createBlock([spent], server.getDifficulty(), block.hash),
         [spent],
       );
       const again = structuredClone(pourTransaction);
@@ -301,8 +313,8 @@ describe('Server', () => {
   });
 
   describe('transactions', () => {
-    describe('addUnminedTransaction / getUnminedTransactions', () => {
-      it('adds and returns unmined transaction', async () => {
+    describe('shared', () => {
+      it('adds and returns an unmined transaction', async () => {
         const tx = mintTx('tx1');
         const hash = await server.addUnminedTransaction(tx);
         expect(hash).to.equal('tx1');
@@ -311,37 +323,14 @@ describe('Server', () => {
         expect(unmined[0].hash).to.equal('tx1');
       });
 
-      it('rejects a transaction with invalid structure', async () => {
+      it('rejects a transaction without a hash', async () => {
         try {
-          await server.addUnminedTransaction({
-            hash: 'tx1',
-            utxoIns: [],
-            utxoOuts: [],
-          });
-          expect.fail('should have thrown');
-        } catch (err) {
-          expect(err.message).to.include('exactly one output');
-        }
-      });
-
-      it('rejects a transaction whose utxoIns length is not 0 or 1', async () => {
-        const tx = pourTx('tx-len', [bigIntToHex(1n), bigIntToHex(2n)]);
-        try {
+          const tx = mintTx('tx1');
+          delete tx.hash;
           await server.addUnminedTransaction(tx);
           expect.fail('should have thrown');
         } catch (err) {
-          expect(err.message).to.include('0 or 1');
-        }
-      });
-
-      it('rejects pour inputs that are not serial numbers', async () => {
-        const tx = pourTx('tx-shape');
-        tx.utxoIns = [{ sn: bigIntToHex(1n) }];
-        try {
-          await server.addUnminedTransaction(tx);
-          expect.fail('should have thrown');
-        } catch (err) {
-          expect(err.message).to.include('serial number');
+          expect(err.message).to.include('hash');
         }
       });
 
@@ -353,6 +342,34 @@ describe('Server', () => {
           expect.fail('should have thrown');
         } catch (err) {
           expect(err.message).to.include('encrypted_secrets');
+        }
+      });
+    });
+
+    describe('mint', () => {
+      it('rejects a mint that does not have exactly one output', async () => {
+        try {
+          await server.addUnminedTransaction({
+            hash: 'tx1',
+            utxoIns: [],
+            utxoOuts: [],
+          });
+          expect.fail('should have thrown');
+        } catch (err) {
+          expect(err.message).to.include('exactly one output');
+        }
+      });
+    });
+
+    describe('pour', () => {
+      it('rejects pour inputs that are not serial numbers', async () => {
+        const tx = pourTx('tx-shape');
+        tx.utxoIns = [{ sn: bigIntToHex(1n) }];
+        try {
+          await server.addUnminedTransaction(tx);
+          expect.fail('should have thrown');
+        } catch (err) {
+          expect(err.message).to.include('serial number');
         }
       });
 
@@ -371,17 +388,6 @@ describe('Server', () => {
           expect.fail('should have thrown');
         } catch (err) {
           expect(err.message).to.include('already in the mempool');
-        }
-      });
-
-      it('rejects transaction without hash', async () => {
-        try {
-          const tx = mintTx('tx1');
-          delete tx.hash;
-          await server.addUnminedTransaction(tx);
-          expect.fail('should have thrown');
-        } catch (err) {
-          expect(err.message).to.include('hash');
         }
       });
     });

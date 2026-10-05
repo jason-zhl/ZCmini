@@ -1,4 +1,6 @@
-Fully private UTXO toy cryptocurrency powered by ZK-SNARKs, based on the Zerocash protocol.
+# ZCmini
+
+ZCmini is a minimal UTXO chain and digital currency that mints and spends coins with zero-knowledge proofs, enabling full value and participant anonymity on a public ledger. Implementation of the [Zerocash protocol](http://zerocash-project.org/media/pdf/zerocash-extended-20140518.pdf) by Ben-Sasson et al.
 
 ## How to run
 
